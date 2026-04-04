@@ -6,6 +6,7 @@
  */
 
 #include <string.h>
+#include <unistd.h>
 
 #include "GdbHandler_CFV1.h"
 #include "TargetDefines.h"
@@ -153,6 +154,16 @@ USBDM_ErrorCode GdbHandler_CFV1::continueTarget(void) {
 }
 
 /**
+ *  Single step target - use the common implementation which calls
+ *  bdmInterface->step() (CMD_USBDM_TARGET_STEP).
+ *
+ *  @param disableInterrupts - true/false -> disable/enable interrupts on step
+ */
+USBDM_ErrorCode GdbHandler_CFV1::stepTarget(bool disableInterrupts) {
+   return GdbHandlerCommon::stepTarget(disableInterrupts);
+}
+
+/**
  * Mask/unmask interrupts (in SR)
  *
  * @param disableInterrupts - true/false -> disable/enable interrupts
@@ -168,8 +179,6 @@ void GdbHandler_CFV1::maskInterrupts(bool disableInterrupts) {
    else {
       bdmInterface->writeDReg(CFV1_DRegCSR, csrValue&~CFV1_CSR_IPI);
    }
-   // For debug checking
-//   bdmInterface->readDReg(CFV1_DRegCSR, &csrValue);
 }
 
 static const char defaultTargetRegsXML[] =
@@ -393,31 +402,11 @@ GdbHandler::GdbTargetStatus GdbHandler_CFV1::getTargetStatus() {
    return status;
 }
 
-//#define REPORT_LONG_LOCATION
-
-/**
- *
- * @param mode          Indicates the reply mode e.g. S T etc
- * @param signal        Signal value e.g. TARGET_SIGNAL_TRAP TARGET_SIGNAL_INT
- * @param stopReason    Optional Reason for stop if T=TARGET_SIGNAL_TRAP
- */
-void GdbHandler_CFV1::reportHalt(char mode, int signal) {
-   LOGGING_Q;
-   char buff[100];
-   char *cPtr = buff;
-
-   cPtr += sprintf(buff, "%c%2.2X", mode, signal);
-#if defined(REPORT_LONG_LOCATION)
-   static const int regsToReport[] = {17, 15, 14, 16}; // PC, SP, FP, SR
-   for (unsigned index=0; index<(sizeof(regsToReport)/sizeof(regsToReport[0])); index++) {
-      cPtr += sprintf(cPtr, "%X:", regsToReport[index]);
-      cPtr += readReg(regsToReport[index], cPtr);
-      *cPtr++ = ';';
-   }
-#endif
-   *cPtr++ = '\0';
-   gdbInOut->sendGdbString(buff);
-}
+// reportHalt: Use the common GdbHandlerCommon::reportHalt implementation.
+// The previous CFV1-specific override bypassed non-stop mode notification
+// handling, thread-id reporting, and breakpoint type info.  Removing the
+// override ensures GDB receives properly formatted stop replies in both
+// all-stop and non-stop modes.
 /**
  * Checks if target at a semi-hosting break
  */

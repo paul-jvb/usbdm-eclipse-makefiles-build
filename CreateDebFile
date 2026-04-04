@@ -182,6 +182,9 @@ makeDebFile() {
       arm-linux-gnueabihf)
         ${CP} "${SOURCE_DIRECTORY}/PackageFiles"/MiscellaneousLinux/DEBIAN/control.armhf ${USBDM_CONTROL_DIR}/control
         ;;
+      aarch64-linux-gnu)
+        ${CP} "${SOURCE_DIRECTORY}/PackageFiles"/MiscellaneousLinux/DEBIAN/control.arm64 ${USBDM_CONTROL_DIR}/control
+        ;;
    esac
    chmod 755 ${USBDM_CONTROL_DIR}/control 
 

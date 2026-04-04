@@ -22,6 +22,7 @@ public:
 
 protected:
    virtual USBDM_ErrorCode   resetTarget(DeviceData::ResetMethod=DeviceData::resetTargetDefault) override;
+   virtual USBDM_ErrorCode   stepTarget(bool disableInterrupts) override;
    virtual USBDM_ErrorCode   continueTarget(void) override;
    virtual void              maskInterrupts(bool disableInterrupts) override;
    virtual void              writeReg(unsigned regNo, unsigned long regValue) override;
@@ -29,7 +30,6 @@ protected:
    virtual USBDM_ErrorCode   initialise() override;
    bool                      atMemoryBreakpoint();
    virtual bool              initRegisterDescription(void) override;
-   virtual void              reportHalt(char mode, int signal) override;
    virtual GdbTargetStatus   pollTarget(void) override;
    GdbTargetStatus           handleHalted();
    GdbTargetStatus           handleHostedBreak();

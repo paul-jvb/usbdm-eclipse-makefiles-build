@@ -1328,84 +1328,80 @@ void GdbHandlerCommon::writeMemory(const char *ccPtr, uint32_t address, uint32_t
 
 //! Handle 'vCont' commands
 //!
+//! Properly parses compound vCont commands (e.g. "vCont;c:-1;s:1") by scanning
+//! all actions.  For this single-threaded target the highest-priority action is
+//! used: step > halt > continue.  This fixes an issue where GDB >= 16 sends
+//! compound commands like "vCont;c:-1;s:1" which the old strStartsWith logic
+//! would misinterpret as a continue instead of a step.
+//!
 USBDM_ErrorCode GdbHandlerCommon::doVContCommands(const GdbPacket *pkt) {
    LOGGING;
-//   int address, length;
    const char *cmd = pkt->buffer;
    if (strStartsWith("vCont?", cmd)) {
       log.print("vCont?\n");
       gdbInOut->sendGdbString("vCont;c;s;t");
+      return BDM_RC_OK;
    }
-//   else if (strStartsWith("vCont;", cmd)) {
-//      bool skip = false;
-//      bool sendExtraNotify = false;
-//      const char *cPtr = cmd+sizeof("vCont")-1;
-//      while (cPtr<(pkt->buffer+pkt->size)) {
-//         char ch = *cPtr++;
-//         if (ch == ';') {
-//            // New command
-//            skip = false;
-//            continue;
-//         }
-//         if (skip) {
-//            // Skip rest of current command
-//            continue;
-//         }
-//         // Process command
-//         switch(ch) {
-//            case 'c': // Continue
-//               log.print("vCont;c - continue\n");
-//               continueTarget();
-//               break;
-//            case 's': // Step
-//               log.print("vCont;s - step\n");
-//               stepTarget(bdmInterface->isMaskISR());
-//               break;
-//            case 't': // Halt
-//               log.print("vCont;t - halt\n");
-//               if (runState == RunState_Halted) {
-//                  // Stopped already
-//                  // Notify in case earlier notice missed
-//                  sendExtraNotify = true;
-//               }
-//               haltTarget();
-//               break;
-//         }
-//         // Discard rest of command if any (thread id)
-//         skip = true;
-//      }
-//      gdbInOut->sendGdbString("OK");
-//      if (sendExtraNotify) {
-//         notifyStop();
-//      }
-//   }
-   else if (strStartsWith("vCont;c", cmd)) {
-      log.print("vCont;c - continue\n");
-      continueTarget();
-      gdbInOut->sendGdbString("OK");
+   if (!strStartsWith("vCont;", cmd)) {
+      log.print("Unrecognised command:\'%s\'\n", cmd);
+      gdbInOut->sendGdbString("");
+      return BDM_RC_OK;
    }
-   else if (strStartsWith("vCont;s", cmd)) {
-      log.print("vCont;s - step\n");
+
+   // Parse all actions in the compound vCont command.
+   // For a single-threaded target we pick the highest-priority action:
+   //   step ('s') > halt ('t') > continue ('c')
+   bool hasStep     = false;
+   bool hasContinue = false;
+   bool hasHalt     = false;
+
+   const char *cPtr = cmd + sizeof("vCont") - 1;  // points at first ';'
+   while (*cPtr == ';') {
+      cPtr++;  // skip ';'
+      char action = *cPtr++;
+      switch (action) {
+         case 's':
+            hasStep = true;
+            break;
+         case 'c':
+            hasContinue = true;
+            break;
+         case 't':
+            hasHalt = true;
+            break;
+         default:
+            log.print("Unknown vCont action '%c'\n", action);
+            break;
+      }
+      // Skip optional thread-id (everything until next ';' or end of string)
+      while (*cPtr != '\0' && *cPtr != ';') {
+         cPtr++;
+      }
+   }
+
+   // Execute the highest-priority action found
+   if (hasStep) {
+      log.print("vCont - step\n");
       stepTarget(bdmInterface->isMaskISR());
-      gdbInOut->sendGdbString("OK");
    }
-   else if (strStartsWith("vCont;t", cmd)) {
-      log.print("vCont;t - halt\n");
+   else if (hasHalt) {
+      log.print("vCont - halt\n");
       if (runState == RunState_Halted) {
-         // Stopped already
-         // Notify in case earlier notice missed
          gdbInOut->sendGdbString("OK");
          notifyStop();
+         return BDM_RC_OK;
       }
-      else {
-         haltTarget();
-         gdbInOut->sendGdbString("OK");
-      }
+      haltTarget();
+   }
+   else if (hasContinue) {
+      log.print("vCont - continue\n");
+      continueTarget();
    }
    else {
-      log.print("Unrecognised command:\'%s\'\n", cmd);
-      gdbInOut->sendGdbString("OK");
+      log.print("vCont - no recognised actions\n");
    }
+
+   gdbInOut->sendGdbString("OK");
    return BDM_RC_OK;
 }
 
@@ -1518,7 +1514,7 @@ USBDM_ErrorCode GdbHandlerCommon::doCommand(const GdbPacket *pkt) {
       // 's' [addr] - Single step.
       //      addr is the address at which to resume. If addr is omitted, resume at same address.
       //      Reply: See [Stop Reply Packets], page for the reply specifications.
-      if (sscanf(pkt->buffer, "s%X", &address) > 1) {
+      if (sscanf(pkt->buffer, "s%X", &address) == 1) {
          // Set PC to address
          log.print("Single step @addr=%X\n", address);
          reportGdbPrintf(M_INFO, "Single step @addr=%X\n", address);
