@@ -2,6 +2,10 @@
 
 **USBDM** is an open-source hardware debugger and flash programmer for Freescale/NXP microcontrollers. It provides a complete toolchain for programming, debugging, and developing firmware across a wide range of embedded target architectures via USB.
 
+> **Original author:** Peter O'Donoghue ([podonoghue](https://github.com/podonoghue/usbdm-eclipse-makefiles-build)) - all credit for the design and development of USBDM belongs to him.
+>
+> This fork adds aarch64 (ARM64) support and packaging. Please refer to the [upstream repository](https://github.com/podonoghue/usbdm-eclipse-makefiles-build) for the canonical source.
+
 > **Version:** 4.12.1 | **License:** GPL | **Platform:** Linux (x86_64, aarch64), Windows (32/64-bit)
 
 ---
@@ -362,8 +366,11 @@ sudo dpkg -i <generated .deb>
 
 ---
 
-## Links
+## Credits
 
+USBDM was created by **Peter O'Donoghue**. This repository is a fork that adds aarch64/ARM64 Linux support.
+
+- **Upstream repository:** https://github.com/podonoghue/usbdm-eclipse-makefiles-build
 - **Release files:** http://sourceforge.net/projects/usbdm/files/
 - **Documentation:** http://usbdm.sourceforge.net/
-- **Source:** https://github.com/paul-jvb/usbdm-eclipse-makefiles-build
+- **This fork:** https://github.com/paul-jvb/usbdm-eclipse-makefiles-build
