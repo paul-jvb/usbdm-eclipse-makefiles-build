@@ -948,7 +948,18 @@ USBDM_ErrorCode bdm_usb_recv_epIn(unsigned count, unsigned char *data, unsigned 
 
    int backoffLimit = 5000; // Maximum time to backoff before giving up (ms)
    int backoff      = 1;    // How long to wait before retry (ms)
+   transferCount = 0;       // 2026-05-07 ARM port fix: ensure stale value can't appear "valid"
    do {
+      // 2026-05-07 ARM port fix: clear dummyBuffer to a sentinel BEFORE each
+      // libusb_bulk_transfer so a short / zero-byte response can't silently
+      // re-deliver the previous transaction's payload. Symptom on the
+      // Pi-hosted aarch64 build was every read of the MCF51JM128 rsrvram /
+      // diag area returning a cached "00 80 0A 94 ..." pattern (the most
+      // recent fault-PC bytes), making the FW look stuck even when it was
+      // making progress. With a sentinel, post-mortem reads of the response
+      // buffer will show 0xEE in unwritten slots instead of stale data.
+      memset(dummyBuffer, 0xEE, sizeof(dummyBuffer));
+      transferCount = 0;
       rc = libusb_bulk_transfer(usbDeviceHandle,
                                 EP_IN,                         // Endpoint & direction
                                 (unsigned char *)dummyBuffer,  // Ptr to Rx data
@@ -968,6 +979,17 @@ USBDM_ErrorCode bdm_usb_recv_epIn(unsigned count, unsigned char *data, unsigned 
       log.error("Transfer failed (Count = %d, USB error = %s, timeout=%d)\n", count, libusb_error_name((libusb_error)rc), timeoutValue);
       data[0] = BDM_RC_USB_ERROR;
       memset(&data[1], 0x00, count-1);
+      return BDM_RC_USB_ERROR;
+   }
+   // 2026-05-07 ARM port fix: a "successful" libusb_bulk_transfer that
+   // received zero bytes is functionally a failure — if we accept it we
+   // pass back whatever was in dummyBuffer (sentinel now, but historically
+   // stale payload from the previous read). Treat 0-byte rx as USB error.
+   if (transferCount == 0) {
+      log.error("Transfer succeeded but got 0 bytes — treating as USB error (count=%d, timeout=%d)\n", count, timeoutValue);
+      data[0] = BDM_RC_USB_ERROR;
+      memset(&data[1], 0x00, count-1);
+      *actualCount = 0;
       return BDM_RC_USB_ERROR;
    }
    memcpy(data, dummyBuffer, transferCount);
