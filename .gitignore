@@ -23,6 +23,7 @@ Release/
 *.x86_64-win-gnu/
 *.i386-linux-gnu/
 *.x86_64-linux-gnu/
+*.aarch64-linux-gnu/
 
 # Packages #
 ############
