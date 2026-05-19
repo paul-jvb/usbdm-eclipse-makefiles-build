@@ -26,6 +26,16 @@ static const uint8_t haltOpcode[] = {0x4A, 0xC8};
 #define TDR_L1EBL    (1<<13)
 #define TDR_L1EPC    (1<<1)
 #define TDR_L1EA_INC (1<<3)
+// Level-1 R/W controls in TDR (MCF51JM128 RM §28.4)
+//   L1RWI (bit 5): 0 = match per L1RW; 1 = ignore R/W (any access)
+//   L1RW  (bit 4): 0 = read, 1 = write (only used when L1RWI=0)
+#define TDR_L1RWI    (1<<5)
+#define TDR_L1RW     (1<<4)
+// CSR BSTAT field (bits 31:28): trigger status reported on halt
+#define CSR_BSTAT_MASK   (0xFu<<28)
+#define CSR_BSTAT_SHIFT  (28)
+// BSTAT >= 0x4 indicates a Level-1 trigger fired (0x4..0x7 per RM §28.5)
+#define CSR_BSTAT_L1_MIN (0x4u)
 #define TDR_DISABLE  (0)
 
 //! Activate breakpoints. \n
@@ -92,7 +102,27 @@ void GdbBreakpoints_CFV1::activateBreakpoints(void) {
       bdmInterface->writeDReg(CFV1_DRegPBR3,0);
    }
    if (dataWatchPoints[0].inUse) {
+      // Always enable Level-1 trigger + halt + inclusive address range
       tdrValue |= TDR_TRC_HALT|TDR_L1T|TDR_L1EBL|TDR_L1EA_INC;
+      // Encode R/W match per watch type (MCF51JM128 RM §28.4, L1RW/L1RWI)
+      switch (dataWatchPoints[0].type) {
+         case BreakType_writeWatch:
+            // Match writes only: L1RWI=0, L1RW=1
+            tdrValue |= TDR_L1RW;
+            break;
+         case BreakType_readWatch:
+            // Match reads only: L1RWI=0, L1RW=0  (nothing to set)
+            break;
+         case BreakType_accessWatch:
+         default:
+            // Match any access (read or write): L1RWI=1
+            tdrValue |= TDR_L1RWI;
+            break;
+      }
+      log.print("(%s@%08X size=%u)\n",
+                getBreakpointName(dataWatchPoints[0].type),
+                dataWatchPoints[0].address,
+                dataWatchPoints[0].size);
       bdmInterface->writeDReg(CFVx_DRegABLR, dataWatchPoints[0].address);
       bdmInterface->writeDReg(CFVx_DRegABHR, dataWatchPoints[0].address+dataWatchPoints[0].size-1);
       breakpointsActive = true;
@@ -161,7 +191,45 @@ USBDM_ErrorCode GdbBreakpoints_CFV1::initBreakpoints() {
  * @return false => Watchpoint has not been matched since last checked.
  */
 bool GdbBreakpoints_CFV1::findMatchedDataWatchPoint(uint32_t &address, BreakType &breakType) {
-   return false;
+   LOGGING_Q;
+   // CFV1 has a single ABLR/ABHR address-range trigger (Level-1).
+   // Only entry 0 of dataWatchPoints is ever programmed by activateBreakpoints().
+   if (!dataWatchPoints[0].inUse) {
+      return false;
+   }
+
+   // Read CSR; BSTAT[31:28] reports trigger status while halted (RM §28.4).
+   unsigned long csrValue = 0;
+   USBDM_ErrorCode rc = bdmInterface->readDReg(CFV1_DRegCSR, &csrValue);
+   if (rc != BDM_RC_OK) {
+      log.error("readDReg(CSR) failed rc=%d\n", rc);
+      return false;
+   }
+   uint32_t bstat = (uint32_t)((csrValue & CSR_BSTAT_MASK) >> CSR_BSTAT_SHIFT);
+   log.print("CSR=0x%08lX BSTAT=0x%X\n", csrValue, bstat);
+
+   // BSTAT < 4 means no Level-1 hardware trigger fired (likely a SW/HW PC bp).
+   if (bstat < CSR_BSTAT_L1_MIN) {
+      return false;
+   }
+
+   // Read back TDR to confirm Level-1 was configured for an address watch
+   // (vs PC-only hardware breakpoint at the same time).
+   unsigned long tdrValue = 0;
+   if (bdmInterface->readDReg(CFV1_DRegTDR, &tdrValue) != BDM_RC_OK) {
+      return false;
+   }
+   if ((tdrValue & TDR_L1EA_INC) == 0) {
+      // Level-1 fired but not via the address-range trigger.
+      return false;
+   }
+
+   // Report the stored watchpoint's address and type to the GDB stop reply.
+   address   = dataWatchPoints[0].address;
+   breakType = dataWatchPoints[0].type;
+   log.print("Matched watch %s @ 0x%08X\n",
+             getBreakpointName(breakType), address);
+   return true;
 }
 
 int  GdbBreakpoints_CFV1::getNumberOfHardwareBreakpoints() {
@@ -169,5 +237,6 @@ int  GdbBreakpoints_CFV1::getNumberOfHardwareBreakpoints() {
 }
 
 int  GdbBreakpoints_CFV1::getNumberOfHardwareWatches() {
-   return 0;
+   // CFV1 BDM supports one ABLR/ABHR address-range trigger (RM §28.5).
+   return 1;
 }
