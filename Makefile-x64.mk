@@ -23,7 +23,6 @@ DIRS = \
   KinetisUnlock        \
   JS16_Bootloader      \
   JB16_Bootloader      \
-  FirmwareChanger      \
   MemoryDump           \
   MergeXML             \
   USBDM_API_Example    \
