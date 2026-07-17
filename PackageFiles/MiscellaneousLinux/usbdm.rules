@@ -13,3 +13,9 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="16d0", ATTR{idProduct}=="06a5", SYMLINK+="usb
 # Allow unrestricted access to USBDM CDC serial port (named ttyUsbdm0 ...)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", TAG+="uaccess", SYMLINK+="ttyUsbdm%n"
 #
+
+# ---------------------------------------------------------------------------
+# Disable USB runtime autosuspend for USBDM pods (16d0:*). Runtime PM
+# suspending an idle pod breaks the BDM link mid-session (SYNC timeouts, dead
+# reads recoverable only by a hub power-cycle). Keep the pod permanently on.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="16d0", TEST=="power/control", ATTR{power/control}="on"
